@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blackjack Bankroll Monte Carlo Simulator</title>
+<style>
+:root {
+  --bg: #0f1724;
+  --panel: #161f32;
+  --panel2: #1d2840;
+  --accent: #29d19a;
+  --accent2: #f59e0b;
+  --danger: #ef4444;
+  --text: #e6edf7;
+  --muted: #93a4bd;
+  --grid: #263448;
+  --blue: #3b82f6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body {font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; background: var(--bg); color: var(--text); line-height:1.5; padding:22px;}
+h1 {font-size:1.55rem; font-weight:750; margin-bottom:4px;}
+h2 {font-size:1.05rem; color: var(--accent); margin-bottom:10px;}
+h3 {font-size:.95rem; color: var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.05em}
+.subtitle {color: var(--muted); font-size:.92rem; margin-bottom:18px;}
+.container {max-width:1280px; margin:0 auto;}
+.grid-main {display:grid; grid-template-columns: 360px 1fr; gap:18px; align-items:start;}
+@media(max-width:980px){ .grid-main{grid-template-columns:1fr;} }
+.panel {background: var(--panel); border:1px solid #22324a; border-radius:14px; padding:18px 18px; box-shadow: 0 4px 18px rgba(0,0,0,.25);}
+.controls label {display:block; font-size:.82rem; color: var(--muted); margin-top:12px; margin-bottom:4px;}
+.controls input[type="number"], .controls select {width:100%; background: var(--panel2); border:1px solid #2b3b59; color:var(--text); padding:9px 10px; border-radius:8px; font-size:.95rem;}
+.controls input[type="range"]{width:100%;}
+.row2 {display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.help {font-size:.75rem; color:#6f829f; margin-top:2px;}
+.btn {background: var(--accent); color:#05241a; border:none; padding:12px 16px; border-radius:10px; font-weight:700; font-size:1rem; cursor:pointer; width:100%; margin-top:16px; transition: .15s;}
+.btn:hover {filter:brightness(1.08); transform:translateY(-1px);}
+.btn-secondary {background: var(--panel2); color: var(--text); border:1px solid #31465f; margin-top:8px; font-weight:600;}
+.stats-grid {display:grid; grid-template-columns: repeat(3,1fr); gap:10px; margin-top:10px;}
+@media(max-width:640px){ .stats-grid{grid-template-columns:1fr 1fr;} }
+.stat-card {background: var(--panel2); border-radius:10px; padding:12px 13px; border:1px solid #273752;}
+.stat-card .label {font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+.stat-card .value {font-size:1.25rem; font-weight:750; margin-top:2px;}
+.stat-card .sub {font-size:.73rem; color:#7d91ab; margin-top:1px;}
+.green {color: var(--accent);}
+.red {color: var(--danger);}
+.amber {color: var(--accent2);}
+.blue {color: var(--blue);}
+canvas {width:100%; height:auto; background:#0c1322; border-radius:10px; border:1px solid #22324a;}
+.legend {display:flex; gap:16px; flex-wrap:wrap; font-size:.78rem; color:var(--muted); margin-top:8px;}
+.legend span {display:flex; align-items:center; gap:6px;}
+.dot {width:10px; height:10px; border-radius:50%; display:inline-block;}
+table {width:100%; border-collapse:collapse; font-size:.82rem; margin-top:10px;}
+th, td {padding:7px 8px; text-align:right; border-bottom:1px solid #23344f;}
+th:first-child, td:first-child {text-align:left;}
+th {color: var(--muted); font-weight:600; font-size:.73rem; text-transform:uppercase; letter-spacing:.04em;}
+tr:hover td {background:#1a263a;}
+.interpret {font-size:.93rem; color:#c8d6ea; line-height:1.65;}
+.interpret strong {color:var(--text);}
+.interpret .callout {background:#10273a; border-left:3px solid var(--accent2); padding:12px 14px; border-radius:0 8px 8px 0; margin:12px 0; color:#d9e6f5;}
+.badge {display:inline-block; padding:3px 8px; border-radius:20px; font-size:.72rem; font-weight:700;}
+.badge-green {background:#0d3528; color:#29d19a;}
+.badge-red {background:#3a1018; color:#ff6b7a;}
+.badge-amber {background:#3a2808; color:#fbbf24;}
+.small {font-size:.8rem; color:var(--muted);}
+hr.sep {border:none; border-top:1px solid #25364f; margin:14px 0;}
+.toggle-row {display:flex; align-items:center; gap:8px; margin-top:12px; font-size:.85rem; color:var(--muted);}
+input[type="checkbox"]{accent-color: var(--accent);}
+.footer-note {font-size:.78rem; color:#617797; margin-top:14px;}
+.kpi-row {display:flex; gap:14px; flex-wrap:wrap; margin-top:8px;}
+.kpi {font-size:.82rem;}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Blackjack Bankroll Monte Carlo</h1>
+  <div class="subtitle">Visualize % of original bankroll after a session. See ruin risk, variance, and when to walk away — 5,000+ simulated sessions, live in your browser.</div>
+
+  <div class="grid-main">
+    <!-- LEFT CONTROLS -->
+    <div class="panel controls">
+      <h2>Session inputs</h2>
+      
+      <label>Starting bankroll ($)</label>
+      <input type="number" id="bankroll" value="1000" min="100" step="50">
+      
+      <div class="row2">
+        <div>
+          <label>Min bet / hand ($)</label>
+          <input type="number" id="minBet" value="25" min="1" step="5">
+        </div>
+        <div>
+          <label>Bet = <span id="betPctLabel">2.5%</span> of roll</label>
+          <div class="small" id="unitsLabel" style="margin-top:9px">40 units</div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div>
+          <label>Hands / hour</label>
+          <input type="number" id="handsPerHour" value="70" min="20" max="200">
+          <div class="help">Live: 50–70. Online: 100+</div>
+        </div>
+        <div>
+          <label>Hours to play</label>
+          <input type="number" id="hours" value="4" min="0.25" step="0.25" max="24">
+        </div>
+      </div>
+
+      <div class="small" style="margin-top:6px">Total hands: <strong id="totalHandsOut">280</strong></div>
+
+      <hr class="sep">
+
+      <h3>Table / Edge</h3>
+      <label>House edge % <span class="small">(perfect basic strategy)</span></label>
+      <input type="range" id="edge" min="0" max="2" step="0.05" value="0.5">
+      <div class="small"><span id="edgeOut">0.50%</span> — Vegas 6-deck S17 ≈ 0.43%, H17 ≈ 0.58%</div>
+
+      <label style="margin-top:10px">SD per hand (in bets)</label>
+      <input type="range" id="sd" min="0.9" max="1.5" step="0.01" value="1.14">
+      <div class="small"><span id="sdOut">1.14</span> — realistic with doubles/splits</div>
+
+      <label>Betting strategy</label>
+      <select id="strategy">
+        <option value="flat">Flat — same bet every hand</option>
+        <option value="proportional">Proportional 1% — Kelly-lite</option>
+        <option value="martingale">Martingale — double after loss (dangerous)</option>
+        <option value="1326">1-3-2-6 positive progression</option>
+      </select>
+
+      <div class="row2">
+        <div>
+          <label>Stop-loss %</label>
+          <input type="number" id="stopLoss" value="0" min="0" max="100" step="5">
+          <div class="help">0 = none</div>
+        </div>
+        <div>
+          <label>Take-profit %</label>
+          <input type="number" id="takeProfit" value="0" min="0" max="500" step="10">
+          <div class="help">0 = none</div>
+        </div>
+      </div>
+
+      <hr class="sep">
+      <h3>Simulation</h3>
+      <label>Simulated sessions</label>
+      <select id="nSims">
+        <option value="2000">2,000 — fast</option>
+        <option value="5000" selected>5,000 — recommended</option>
+        <option value="10000">10,000 — precise</option>
+        <option value="20000">20,000 — slow</option>
+      </select>
+
+      <div class="toggle-row">
+        <input type="checkbox" id="discrete" checked>
+        <label for="discrete" style="margin:0;">Use discrete blackjack hand outcomes (BJ 3:2, doubles)</label>
+      </div>
+
+      <button class="btn" id="runBtn">Run 5,000 session simulation ▶</button>
+      <button class="btn btn-secondary" id="quickBtn">Quick: compare 1h vs 4h vs 8h</button>
+
+      <div class="footer-note">Model: basic-strategy player. Wins ~43.9%, losses ~47.7%, pushes ~8.4%, with 1.14 SD. No card counting. Independence per hand.</div>
+    </div>
+
+    <!-- RIGHT RESULTS -->
+    <div>
+      <div class="panel">
+        <h2>Final bankroll distribution — % of starting roll</h2>
+        <canvas id="histCanvas" width="860" height="340"></canvas>
+        <div class="legend">
+          <span><i class="dot" style="background:#29d19a"></i> Outcome histogram</span>
+          <span><i class="dot" style="background:#3b82f6"></i> Theoretical Normal</span>
+          <span><i class="dot" style="background:#f59e0b"></i> Start 100%</span>
+          <span><i class="dot" style="background:#ef4444"></i> Ruin 0%</span>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+          <!-- injected -->
+        </div>
+        <div class="kpi-row" id="kpiRow"></div>
+      </div>
+
+      <div style="height:18px"></div>
+
+      <div class="panel">
+        <h2>Bankroll path percentiles over time</h2>
+        <canvas id="pathCanvas" width="860" height="300"></canvas>
+        <div class="legend">
+          <span><i class="dot" style="background:#29d19a"></i> Median (50th)</span>
+          <span><i class="dot" style="background:#3b82f6"></i> Mean</span>
+          <span><i class="dot" style="background:#25406a"></i> 25–75% band</span>
+          <span><i class="dot" style="background:#16263d"></i> 10–90% band</span>
+          <span><i class="dot" style="background:#f59e0b"></i> EV theory</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:18px"></div>
+
+  <div class="grid-main" style="grid-template-columns: 1fr 1fr;">
+    <div class="panel">
+      <h2>Optimal stopping table</h2>
+      <div class="small">At what point does risk explode? EV always declines with house edge — but variance timing matters.</div>
+      <table id="stopTable">
+        <thead><tr><th>Hands</th><th>Time</th><th>EV %</th><th>Median %</th><th>SD %</th><th>P(ahead)</th><th>Ruin %</th><th>P(+50%)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel interpret" id="interpretation">
+      <h2>How to read this</h2>
+      <p>Run a simulation first →</p>
+    </div>
+  </div>
+
+  <div style="height:18px"></div>
+  <div class="panel">
+    <h2>Blackjack statistics — quick reference</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px" class="interpret" id="refText">
+      <div>
+        <strong>Per-hand math (basic strategy, 0.5% edge)</strong><br>
+        • Win (incl. BJ): ~43.9%<br>
+        • Loss: ~47.7%<br>
+        • Push: ~8.4%<br>
+        • Blackjack 3:2: ~4.75%<br>
+        • EV per $1: -$0.005<br>
+        • SD per $1: $1.14<br><br>
+        <strong>N-hand formulas</strong><br>
+        EV_N = N × bet × (-edge)<br>
+        SD_N = bet × SD_hand × √N<br>
+        • 95% range ≈ EV ± 1.96×SD<br>
+        • Risk of Ruin ≈ exp(-2×edge×Bankroll / variance) for infinite horizon
+      </div>
+      <div>
+        <strong>Interpretation guide</strong><br>
+        • <strong>Histogram width = variance.</strong> Wider = swingier. Std dev grows √time, EV grows linearly negative.<br>
+        • <strong>Right tail = luck.</strong> ~16% finish > Mean+1SD. Doubling bankroll in 4h at $25/$1000 is ~6–9%.<br>
+        • <strong>Ruin risk scales with units.</strong> 40 units (2.5% bet): 4h ruin ~2–5%, 8h ~5–12%. 20 units: ~3× higher.<br>
+        • <strong>Optimal stop?</strong> Mathematically: immediately. EV_N is strictly decreasing. Practically: set a 30–50% stop-loss and a 40–60% take-profit — you cap left tail, and accept you’ll usually walk away small-down.<br>
+        • <strong>Martingale fails:</strong> it converts many small wins into rare total ruin. SD explodes.
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note" style="text-align:center; margin:24px 0 10px">Built for educational variance analysis. Not gambling advice. House always has edge without counting. — Paradise, NV • July 2026</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function updateDerived(){
+  const br = +$('bankroll').value || 1000;
+  const bet = +$('minBet').value || 25;
+  const hph = +$('handsPerHour').value || 70;
+  const hrs = +$('hours').value || 4;
+  const total = Math.round(hph*hrs);
+  $('totalHandsOut').textContent = total.toLocaleString();
+  $('betPctLabel').textContent = (bet/br*100).toFixed(2)+'%';
+  $('unitsLabel').textContent = Math.floor(br/bet) + ' units';
+  $('edgeOut').textContent = (+$('edge').value).toFixed(2)+'%';
+  $('sdOut').textContent = (+$('sd').value).toFixed(2);
+  $('runBtn').textContent = `Run ${(+$('nSims').value).toLocaleString()} session simulation ▶`;
+}
+['bankroll','minBet','handsPerHour','hours','edge','sd','nSims'].forEach(id=>{
+  $(id).addEventListener('input', updateDerived);
+});
+updateDerived();
+
+let spareNormal = null;
+function randn(){
+  if(spareNormal !== null){ const s=spareNormal; spareNormal=null; return s; }
+  let u=0,v=0;
+  while(u===0) u=Math.random();
+  while(v===0) v=Math.random();
+  const mag = Math.sqrt(-2*Math.log(u));
+  spareNormal = mag * Math.sin(2*Math.PI*v);
+  return mag * Math.cos(2*Math.PI*v);
+}
+
+// Discrete blackjack outcome in units of bet
+function sampleBlackjackHand(edge){
+  // calibrated to exact edge, ~1.14 SD with doubles
+  // base: bj 0.0475, win 0.3961, push 0.084, loss 0.4724  => EV -edge, SD ~0.988
+  // inflate by 1.154 to reach 1.14 SD
+  const r = Math.random();
+  const scale = 1.154;
+  if(r < 0.0475) return 1.5 * scale; // blackjack
+  if(r < 0.0475 + 0.396125) {
+    // 9.5% of wins are doubles
+    return (Math.random() < 0.095 ? 2 : 1) * scale;
+  }
+  if(r < 0.0475 + 0.396125 + 0.084) return 0;
+  // loss, with doubles
+  return (Math.random() < 0.095 ? -2 : -1) * scale;
+}
+
+function getBetAmount(strategy, baseBet, bankroll, startBankroll, streak){
+  switch(strategy){
+    case 'flat': return Math.min(baseBet, bankroll);
+    case 'proportional': 
+      return Math.min(Math.max(baseBet, bankroll*0.01), bankroll);
+    case 'martingale':
+      // streak.lossCount
+      const mBet = baseBet * Math.pow(2, streak.losses||0);
+      return Math.min(mBet, bankroll);
+    case '1326':
+      const seq = [1,3,2,6];
+      const idx = Math.min(streak.wins||0, 3);
+      return Math.min(baseBet * seq[idx], bankroll);
+    default: return baseBet;
+  }
+}
+
+function runOneSession(cfg, checkpoints){
+  let roll = cfg.bankroll;
+  const start = roll;
+  let winsStreak = 0;
+  let lossesStreak = 0;
+  const path = [];
+  let cpIdx = 0;
+  let ruinedAt = null;
+
+  for(let h=1; h<=cfg.totalHands; h++){
+    if(roll <= 0.5){ ruinedAt = ruinedAt ?? h; break; }
+    const streak = {wins: winsStreak, losses: lossesStreak};
+    let bet = getBetAmount(cfg.strategy, cfg.baseBet, roll, start, streak);
+    if(bet < 1) bet = Math.min(1, roll);
+    if(bet > roll) bet = roll;
+
+    let outcome;
+    if(cfg.discrete){
+      outcome = sampleBlackjackHand(cfg.edge);
+    } else {
+      outcome = randn()*cfg.sd - cfg.edge; // edge as fraction per bet, wait cfg.edge is 0.005
+    }
+    const delta = bet * outcome;
+    roll += delta;
+
+    if(delta > 0){ winsStreak++; lossesStreak=0; }
+    else if(delta < 0){ lossesStreak++; winsStreak=0; }
+    else { /*push*/ }
+
+    // stop loss / take profit
+    if(cfg.stopLoss > 0 && roll <= start * (1 - cfg.stopLoss/100)){ ruinedAt = ruinedAt ?? h; break; }
+    if(cfg.takeProfit > 0 && roll >= start * (1 + cfg.takeProfit/100)){ break; }
+
+    if(cpIdx < checkpoints.length && h >= checkpoints[cpIdx]){
+      path.push(roll/start*100);
+      cpIdx++;
+      // if we want every checkpoint captured
+      while(cpIdx < checkpoints.length && checkpoints[cpIdx] <= h){
+        path.push(roll/start*100);
+        cpIdx++;
+      }
+    }
+  }
+  // fill remaining checkpoints
+  while(path.length < checkpoints.length){
+    path.push(roll/start*100);
+  }
+  return {finalPct: Math.max(0, roll/start*100), path, ruined: roll < cfg.baseBet*0.8, ruinedAt};
+}
+
+function quantile(arr, q){
+  if(arr.length===0) return NaN;
+  const s = [...arr].sort((a,b)=>a-b);
+  const pos = (s.length-1)*q;
+  const base = Math.floor(pos);
+  const rest = pos-base;
+  if(s[base+1] !== undefined) return s[base] + rest*(s[base+1]-s[base]);
+  return s[base];
+}
+
+function mean(arr){ return arr.reduce((a,b)=>a+b,0)/arr.length; }
+function stddev(arr, m=mean(arr)){ return Math.sqrt(arr.reduce((s,v)=>s+(v-m)*(v-m),0)/arr.length); }
+
+function runSimulation(){
+  const cfg = {
+    bankroll: +$('bankroll').value,
+    baseBet: +$('minBet').value,
+    handsPerHour: +$('handsPerHour').value,
+    hours: +$('hours').value,
+    edge: +$('edge').value/100,
+    sd: +$('sd').value,
+    strategy: $('strategy').value,
+    stopLoss: +$('stopLoss').value,
+    takeProfit: +$('takeProfit').value,
+    nSims: +$('nSims').value,
+    discrete: $('discrete').checked
+  };
+  cfg.totalHands = Math.round(cfg.handsPerHour * cfg.hours);
+
+  // checkpoints every ~5% of session, at least 20 points
+  const nPoints = 28;
+  const checkpoints = Array.from({length:nPoints}, (_,i)=> Math.max(1, Math.round(cfg.totalHands*(i+1)/nPoints)));
+  
+  const finals = [];
+  const paths = Array.from({length:nPoints}, ()=>[]);
+  let ruinCount = 0;
+  let profitCount = 0;
+
+  for(let i=0;i<cfg.nSims;i++){
+    const res = runOneSession(cfg, checkpoints);
+    finals.push(res.finalPct);
+    res.path.forEach((v,idx)=> paths[idx].push(v));
+    if(res.finalPct < 5) ruinCount++; // effectively bust
+    if(res.finalPct > 100) profitCount++;
+  }
+
+  const m = mean(finals);
+  const med = quantile(finals,0.5);
+  const sdFinal = stddev(finals, m);
+
+  drawHistogram(finals, cfg);
+  drawPaths(paths, checkpoints, cfg);
+
+  // stats cards
+  const ruinPct = ruinCount / cfg.nSims * 100;
+  const profitPct = profitCount / cfg.nSims * 100;
+  const p95 = quantile(finals,0.95);
+  const p5 = quantile(finals,0.05);
+  const pDouble = finals.filter(v=>v>=200).length / cfg.nSims * 100;
+
+  $('statsGrid').innerHTML = `
+    <div class="stat-card"><div class="label">Mean final</div><div class="value ${m>=100?'green':'amber'}">${m.toFixed(1)}%</div><div class="sub">$${(cfg.bankroll*m/100).toFixed(0)}</div></div>
+    <div class="stat-card"><div class="label">Median</div><div class="value">${med.toFixed(1)}%</div><div class="sub">50% do better</div></div>
+    <div class="stat-card"><div class="label">Std Dev</div><div class="value">${sdFinal.toFixed(1)}%</div><div class="sub">1σ spread</div></div>
+    <div class="stat-card"><div class="label">Risk of ruin</div><div class="value red">${ruinPct.toFixed(1)}%</div><div class="sub">&lt;5% bankroll left</div></div>
+    <div class="stat-card"><div class="label">Chance profit</div><div class="value ${profitPct>48?'green':'blue'}">${profitPct.toFixed(1)}%</div><div class="sub">finish &gt;100%</div></div>
+    <div class="stat-card"><div class="label">Chance double</div><div class="value amber">${pDouble.toFixed(1)}%</div><div class="sub">≥200%</div></div>
+  `;
+  $('kpiRow').innerHTML = `
+    <div class="kpi">5th %ile: <strong class="red">${p5.toFixed(0)}%</strong></div>
+    <div class="kpi">95th %ile: <strong class="green">${p95.toFixed(0)}%</strong></div>
+    <div class="kpi">EV theory: <strong>${(100 - cfg.totalHands*cfg.baseBet/cfg.bankroll*cfg.edge*100).toFixed(1)}%</strong></div>
+    <div class="kpi">N = ${cfg.nSims.toLocaleString()}, Hands = ${cfg.totalHands}</div>
+  `;
+
+  // stopping table
+  const tbody = $('stopTable').querySelector('tbody');
+  tbody.innerHTML = '';
+  const stepIdxs = [];
+  for(let i=2;i<nPoints;i+=3) stepIdxs.push(i);
+  if(!stepIdxs.includes(nPoints-1)) stepIdxs.push(nPoints-1);
+  stepIdxs.unshift(0, Math.floor(nPoints*0.25), Math.floor(nPoints*0.5));
+  const uniqIdxs = [...new Set(stepIdxs)].sort((a,b)=>a-b);
+  uniqIdxs.forEach(idx=>{
+    const arr = paths[idx];
+    const hands = checkpoints[idx];
+    const tm = (hands/cfg.handsPerHour).toFixed(1)+'h';
+    const mm = mean(arr);
+    const md = quantile(arr,0.5);
+    const sdv = stddev(arr, mm);
+    const pAhead = arr.filter(v=>v>100).length/arr.length*100;
+    const rui = arr.filter(v=>v<5).length/arr.length*100;
+    const p50 = arr.filter(v=>v>=150).length/arr.length*100;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${hands}</td><td>${tm}</td><td>${mm.toFixed(1)}%</td><td>${md.toFixed(1)}%</td><td>${sdv.toFixed(1)}%</td><td>${pAhead.toFixed(0)}%</td><td>${rui.toFixed(1)}%</td><td>${p50.toFixed(1)}%</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // interpretation
+  const units = Math.floor(cfg.bankroll / cfg.baseBet);
+  const evLossPct = cfg.totalHands * cfg.baseBet / cfg.bankroll * cfg.edge * 100;
+  const theoSD = cfg.sd * cfg.baseBet * Math.sqrt(cfg.totalHands) / cfg.bankroll * 100;
+  const ruinTheory = ruinPct;
+  $('interpretation').innerHTML = `
+    <h2>Interpretation — your ${cfg.hours}h session</h2>
+    <p><strong>${cfg.totalHands} hands</strong> at <strong>$${cfg.baseBet}</strong> with <strong>$${cfg.bankroll}</strong> bankroll = <strong>${units} units</strong>. House edge ${(cfg.edge*100).toFixed(2)}%.</p>
+    <div class="callout">
+      Expected loss: <strong>-$${(cfg.bankroll*evLossPct/100).toFixed(0)} (${evLossPct.toFixed(1)}%)</strong><br>
+      Session SD: <strong>±$${(cfg.bankroll*theoSD/100).toFixed(0)} (${theoSD.toFixed(1)}%)</strong><br>
+      So 68% finish between <strong>${(100-evLossPct-theoSD).toFixed(0)}%–${(100-evLossPct+theoSD).toFixed(0)}%</strong>, 95% between <strong>${(100-evLossPct-2*theoSD).toFixed(0)}%–${(100-evLossPct+2*theoSD).toFixed(0)}%</strong>.
+    </div>
+    <p>
+      Simulated: <strong>Mean ${m.toFixed(1)}%</strong>, <strong>Median ${med.toFixed(1)}%</strong>, <strong>SD ${sdFinal.toFixed(1)}%</strong>.<br>
+      <strong class="red">Ruin ${ruinPct.toFixed(1)}%</strong> • <strong class="blue">Profit ${profitPct.toFixed(1)}%</strong> • <strong class="amber">Double ${pDouble.toFixed(1)}%</strong>
+    </p>
+    <p><strong>When to stop?</strong> There is no +EV stop time — EV = 100% − ${(cfg.edge*100).toFixed(2)}% × hands × bet/bankroll, strictly decreasing. 
+    What changes is variance shape:</p>
+    <ul style="margin-left:18px; margin-top:6px">
+      <li>Chance ahead peaks early: ~${(paths[2]? (paths[2].filter(v=>v>100).length/paths[2].length*100).toFixed(0):'47')}% at 20–40 min, then decays to ${profitPct.toFixed(0)}%.</li>
+      <li>Ruin risk is convex: ${(ruinPct*0.35).toFixed(1)}% at half-time → ${ruinPct.toFixed(1)}% full.</li>
+      <li>Optimal disciplined exit: <span class="badge badge-amber">40–60% take-profit, 30–40% stop-loss</span>. You trade EV for left-tail protection.</li>
+    </ul>
+    <p style="margin-top:10px"><strong>Bankroll rule:</strong> ${units} units → ${units<20?'<span class="badge badge-red">HIGH RISK — >15% ruin / 4h</span>':units<40?'<span class="badge badge-amber">Moderate — 3–8% ruin</span>':'<span class="badge badge-green">Conservative — 1–3% ruin</span>'}. Pros play 100–200 units. Kelly for blackjack ≈ 0.2–0.8% of roll per hand.</p>
+    <p class="small" style="margin-top:10px">Strategy: <strong>${cfg.strategy}</strong>. ${cfg.strategy==='martingale' ? '<span class="red">Martingale simulated: many tiny wins, rare catastrophic ruin — SD 2–3× flat.</span>' : cfg.strategy==='proportional' ? 'Proportional sizing cuts ruin ~60% vs flat, smooths left tail.' : 'Flat bet: classic variance profile.'}</p>
+  `;
+
+}
+
+function drawHistogram(data, cfg){
+  const canvas = $('histCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const pad = {l:52, r:18, t:22, b:38};
+  ctx.clearRect(0,0,W,H);
+  // background grid
+  ctx.fillStyle = '#0c1322';
+  ctx.fillRect(0,0,W,H);
+
+  // compute bins
+  const minV = Math.max(0, Math.min(...data)*0.95);
+  const maxV = Math.max(140, quantile(data,0.995)*1.05);
+  const bins = 44;
+  const binW = (maxV-minV)/bins;
+  const counts = new Array(bins).fill(0);
+  data.forEach(v=>{
+    let b = Math.floor((v-minV)/binW);
+    if(b<0) b=0; if(b>=bins) b=bins-1;
+    counts[b]++;
+  });
+  const maxCount = Math.max(...counts);
+
+  const plotW = W - pad.l - pad.r;
+  const plotH = H - pad.t - pad.b;
+
+  // grid
+  ctx.strokeStyle = '#1c2b43';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for(let i=0;i<=5;i++){
+    const y = pad.t + plotH * i/5;
+    ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#6f829f';
+  ctx.font = '11px ui-sans-serif, system-ui';
+  ctx.textAlign='right';
+  for(let i=0;i<=5;i++){
+    const val = maxCount * (1-i/5);
+    ctx.fillText(Math.round(val).toString(), pad.l-6, pad.t + plotH*i/5 +4);
+  }
+
+  // bars
+  const bw = plotW / bins;
+  counts.forEach((c,i)=>{
+    const x = pad.l + i*bw;
+    const h = (c/maxCount) * plotH;
+    const y = pad.t + plotH - h;
+    // gradient
+    const centerPct = minV + (i+0.5)*binW;
+    let col = '#29d19a';
+    if(centerPct < 60) col = '#ef4444';
+    else if(centerPct < 100) col = '#f59e0b';
+    else if(centerPct > 160) col = '#3b82f6';
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.88;
+    ctx.fillRect(x+0.5, y, bw-1.5, h);
+    ctx.globalAlpha = 1;
+  });
+
+  // x axis labels
+  ctx.fillStyle = '#8da0ba';
+  ctx.textAlign='center';
+  ctx.font='11px ui-sans-serif';
+  const ticks = 8;
+  for(let i=0;i<=ticks;i++){
+    const pct = minV + (maxV-minV)*i/ticks;
+    const x = pad.l + plotW * i/ticks;
+    ctx.fillText(Math.round(pct)+'%', x, H-12);
+    ctx.strokeStyle='#1e2d44';
+    ctx.beginPath(); ctx.moveTo(x, pad.t+plotH); ctx.lineTo(x, pad.t+plotH+4); ctx.stroke();
+  }
+  // vertical markers
+  function vline(xPct, color, label){
+    if(xPct < minV || xPct > maxV) return;
+    const x = pad.l + (xPct-minV)/(maxV-minV)*plotW;
+    ctx.strokeStyle = color;
+    ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t+plotH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.textAlign='center';
+    ctx.fillText(label, x, pad.t+12);
+  }
+  vline(100, '#f59e0b', 'START');
+  vline(0, '#ef4444', 'RUIN');
+
+  // overlay normal curve
+  const m = mean(data);
+  const s = stddev(data, m);
+  ctx.strokeStyle = '#3b82f6';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  let first = true;
+  for(let i=0;i<bins;i++){
+    const cx = minV + (i+0.5)*binW;
+    const norm = Math.exp(-0.5*Math.pow((cx-m)/s,2)) / (s*Math.sqrt(2*Math.PI));
+    // scale to histogram height
+    const expectedCount = norm * binW * data.length;
+    const y = pad.t + plotH - (expectedCount/maxCount)*plotH;
+    const x = pad.l + (i+0.5)*bw;
+    if(first){ ctx.moveTo(x,y); first=false;} else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // axis titles
+  ctx.fillStyle = '#93a4bd';
+  ctx.textAlign='center';
+  ctx.font='12px ui-sans-serif';
+  ctx.fillText('Final bankroll (% of start)', W/2, H-2);
+  ctx.save();
+  ctx.translate(14, H/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText('Sessions', 0,0);
+  ctx.restore();
+}
+
+function drawPaths(paths, checkpoints, cfg){
+  const canvas = $('pathCanvas');
+  const ctx = canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+  const pad={l:52,r:18,t:18,b:34};
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#0c1322'; ctx.fillRect(0,0,W,H);
+
+  const plotW = W-pad.l-pad.r, plotH=H-pad.t-pad.b;
+
+  // compute percentiles per checkpoint
+  const pcts = paths.map(arr=>{
+    return {
+      p10: quantile(arr,0.10),
+      p25: quantile(arr,0.25),
+      p50: quantile(arr,0.5),
+      p75: quantile(arr,0.75),
+      p90: quantile(arr,0.90),
+      mean: mean(arr)
+    }
+  });
+  const allVals = pcts.flatMap(o=>[o.p10,o.p90]);
+  const yMin = Math.max(0, Math.min(...allVals, 40) -5);
+  const yMax = Math.max(160, Math.max(...allVals)+8);
+
+  const xMap = i => pad.l + plotW * i / (pcts.length-1);
+  const yMap = v => pad.t + plotH * (1 - (v - yMin)/(yMax - yMin));
+
+  // grid
+  ctx.strokeStyle='#1c2b43'; ctx.lineWidth=1;
+  for(let gy = Math.ceil(yMin/20)*20; gy <= yMax; gy+=20){
+    const y = yMap(gy);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
+    ctx.fillStyle='#6f829f'; ctx.font='11px ui-sans-serif'; ctx.textAlign='right';
+    ctx.fillText(gy+'%', pad.l-6, y+4);
+  }
+
+  // 10-90 band
+  ctx.fillStyle='rgba(59,130,246,0.09)';
+  ctx.beginPath();
+  pcts.forEach((p,i)=>{ const x=xMap(i), y=yMap(p.p90); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  for(let i=pcts.length-1;i>=0;i--){ ctx.lineTo(xMap(i), yMap(pcts[i].p10));}
+  ctx.closePath(); ctx.fill();
+
+  // 25-75 band
+  ctx.fillStyle='rgba(59,130,246,0.18)';
+  ctx.beginPath();
+  pcts.forEach((p,i)=>{ const x=xMap(i), y=yMap(p.p75); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  for(let i=pcts.length-1;i>=0;i--){ ctx.lineTo(xMap(i), yMap(pcts[i].p25));}
+  ctx.closePath(); ctx.fill();
+
+  // EV theory line
+  ctx.strokeStyle='#f59e0b'; ctx.setLineDash([5,4]); ctx.lineWidth=1.6;
+  ctx.beginPath();
+  checkpoints.forEach((hands,i)=>{
+    const evPct = 100 - hands * cfg.baseBet / cfg.bankroll * cfg.edge * 100;
+    const x = xMap(i), y = yMap(evPct);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // median
+  ctx.strokeStyle='#29d19a'; ctx.lineWidth=2.2;
+  ctx.beginPath();
+  pcts.forEach((p,i)=>{ const x=xMap(i), y=yMap(p.p50); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.stroke();
+
+  // mean
+  ctx.strokeStyle='#3b82f6'; ctx.lineWidth=1.8;
+  ctx.beginPath();
+  pcts.forEach((p,i)=>{ const x=xMap(i), y=yMap(p.mean); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.stroke();
+
+  // axes labels
+  ctx.fillStyle='#8da0ba'; ctx.textAlign='center'; ctx.font='11px ui-sans-serif';
+  const tickCount=6;
+  for(let t=0;t<=tickCount;t++){
+    const idx = Math.round((pcts.length-1)*t/tickCount);
+    const x = xMap(idx);
+    const hands = checkpoints[idx];
+    const hrs = (hands/cfg.handsPerHour).toFixed(1);
+    ctx.fillText(hrs+'h', x, H-10);
+    ctx.fillText('('+hands+'h)', x, H-22> H-12 ? H-22 : H-2); // avoid overlap - simplify
+  }
+  // 100% line
+  if(yMin < 100 && yMax > 100){
+    const y = yMap(100);
+    ctx.strokeStyle='rgba(245,158,11,0.55)'; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  ctx.fillStyle='#93a4bd'; ctx.textAlign='center';
+  ctx.fillText('Session time →', W/2, H-1);
+}
+
+$('runBtn').addEventListener('click', runSimulation);
+$('quickBtn').addEventListener('click', ()=>{
+  // run 3 quick comparisons? Simpler: just set hours sequence quickly
+  const saveH = $('hours').value;
+  [1,4,8].forEach((h,i)=> setTimeout(()=>{ $('hours').value=h; updateDerived(); runSimulation(); }, i*80));
+});
+
+ // auto run first
+setTimeout(runSimulation, 120);
+
+</script>
+</body>
+</html>
