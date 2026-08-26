@@ -99,6 +99,7 @@ input[type="checkbox"]{accent-color: var(--accent);}
   <div class="tab-bar" role="tablist">
     <button class="tab-btn active" type="button" data-tab="sim" role="tab" aria-selected="true" onclick="switchTab(this)">Session simulator</button>
     <button class="tab-btn" type="button" data-tab="percentile" role="tab" aria-selected="false" onclick="switchTab(this)">My outcome percentile</button>
+    <button class="tab-btn" type="button" data-tab="ruin" role="tab" aria-selected="false" onclick="switchTab(this)">Gambler&rsquo;s ruin</button>
   </div>
 
   <div id="tab-sim" class="tab-page active">
@@ -417,7 +418,117 @@ input[type="checkbox"]{accent-color: var(--accent);}
     </div>
   </div><!-- /tab-percentile -->
 
-  <div class="footer-note" style="text-align:center; margin:24px 0 10px">Built for educational variance analysis. Not gambling advice. House always has edge without counting. — Paradise, NV • July 2026</div>
+  <div id="tab-ruin" class="tab-page">
+    <div class="grid-main">
+      <div class="panel controls">
+        <h2>Coin-flip duel</h2>
+        <div class="small" style="margin-top:2px">Two players. Each flip the coin, the loser pays the stake to the winner. First player to run out of money loses.</div>
+
+        <div class="row2">
+          <div>
+            <label>Alice bankroll ($)</label>
+            <input type="number" id="ruinA" value="70" min="1" step="1">
+          </div>
+          <div>
+            <label>Bob bankroll ($)</label>
+            <input type="number" id="ruinB" value="30" min="1" step="1">
+          </div>
+        </div>
+
+        <label>Stake per flip ($)</label>
+        <select id="ruinStake">
+          <option value="1" selected>$1</option>
+          <option value="2">$2</option>
+          <option value="5">$5</option>
+          <option value="10">$10</option>
+          <option value="25">$25</option>
+        </select>
+        <div class="help" id="ruinUnitsHelp">Total $100 = 100 units of $1</div>
+
+        <label>Coin fairness — P(Alice wins a flip)</label>
+        <input type="range" id="ruinP" min="0.05" max="0.95" step="0.01" value="0.5">
+        <div class="small"><span id="ruinPOut">0.50</span> — 0.50 is a fair coin. Bias the coin to give either player an edge.</div>
+
+        <hr class="sep">
+        <h3>Specific-value targets</h3>
+        <div class="row2">
+          <div>
+            <label>Alice reaches ($)</label>
+            <input type="number" id="ruinTargetA" value="100" min="0" step="1">
+            <div class="help">…before Bob hits $0</div>
+          </div>
+          <div>
+            <label>Bob reaches ($)</label>
+            <input type="number" id="ruinTargetB" value="100" min="0" step="1">
+            <div class="help">…before Alice hits $0</div>
+          </div>
+        </div>
+        <div class="small" id="ruinTargetHelp">Set these to the total pot to ask “who ruins whom?”. Set an intermediate value to ask “how likely is a player to ever get there first?”</div>
+
+        <hr class="sep">
+        <h3>Monte Carlo</h3>
+        <label>Simulated games</label>
+        <select id="ruinNSims">
+          <option value="2000">2,000 — fast</option>
+          <option value="5000" selected>5,000 — recommended</option>
+          <option value="10000">10,000 — precise</option>
+          <option value="20000">20,000 — precise but slow</option>
+        </select>
+
+        <button class="btn" id="ruinRunBtn" type="button" onclick="runGamblersRuin()">Run 5,000 coin-flip games ▶</button>
+        <button class="btn btn-secondary" id="ruinCopyBtn" type="button" onclick="copySessionToRuin()">Use simulator bankrolls</button>
+
+        <div class="footer-note">Each game keeps flipping until one bankroll is $0. Bankrolls and targets are rounded to whole stakes. Fair coin: win odds are exactly proportional to starting bankroll — the richer player is the favorite.</div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <h2>Who ruins whom — and your two targets</h2>
+          <div class="stats-grid" id="ruinWinGrid"></div>
+          <div class="kpi-row" id="ruinKpiRow"></div>
+          <div style="margin-top:12px">
+            <table id="ruinTargetTable">
+              <thead><tr><th>Event</th><th>Monte Carlo</th><th>Exact</th><th>Δ</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="height:18px"></div>
+
+        <div class="panel">
+          <h2>Time until the first ruin (number of flips)</h2>
+          <canvas id="ruinDurCanvas" width="860" height="300"></canvas>
+          <div class="legend">
+            <span><i class="dot" style="background:#3b82f6"></i> Monte Carlo</span>
+            <span><i class="dot" style="background:#f59e0b"></i> Theory median</span>
+          </div>
+        </div>
+
+        <div style="height:18px"></div>
+
+        <div class="panel">
+          <h2>Probability each player reaches a given bankroll before losing to $0</h2>
+          <canvas id="ruinReachCanvas" width="860" height="320"></canvas>
+          <div class="legend">
+            <span><i class="dot" style="background:#29d19a"></i> Alice reaches — exact</span>
+            <span><i class="dot" style="background:#7ee2b8"></i> Alice reaches — Monte Carlo</span>
+            <span><i class="dot" style="background:#f59e0b"></i> Bob reaches — exact</span>
+            <span><i class="dot" style="background:#ffd089"></i> Bob reaches — Monte Carlo</span>
+          </div>
+          <div class="small">x-axis is Alice&rsquo;s bankroll. Bob&rsquo;s bankroll is the mirror (total minus Alice&rsquo;s).</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:18px"></div>
+    <div class="panel interpret" id="ruinInterpretation">
+      <h2>The mathematics of gambler&rsquo;s ruin</h2>
+      <p>Set a scenario and run it → the formulas and what they mean appear here.</p>
+    </div>
+  </div><!-- /tab-ruin -->
+
+  <div class="footer-note" style="text-align:center; margin:24px 0 10px">Built for educational variance analysis and gambler&rsquo;s-ruin mathematics. Not gambling advice. — Paradise, NV • July 2026</div>
 </div>
 
 <script src="app.js"></script>

@@ -836,3 +836,411 @@ function runPercentile(){
 window.runPercentile = runPercentile;
 $('pctRunBtn').addEventListener('click', runPercentile);
 
+
+/* ---------- Gambler's ruin: coin-flip duel ---------- */
+
+// Round a dollar value down/nearest to whole stakes (the model uses whole units).
+function roundToStakeUnits(v, stake){
+  return Math.max(0, Math.round((+v || 0) / stake));
+}
+
+function ruinFitP(){
+  const p = Math.min(0.999999, Math.max(0.000001, +$('ruinP').value || 0.5));
+  const q = 1 - p;
+  return {p, q, r: q / p};
+}
+
+// Exact probability Alice (starting at a units) reaches S units (Bob at $0) before 0.
+function aliceWinProb(a, s, p, q){
+  if (s <= 0) return 0;
+  if (a <= 0) return 0;
+  if (a >= s) return 1;
+  if (Math.abs(p - q) < 1e-12) return a / s;
+  if (p <= 0 || q <= 0) return p > 0 ? 1 : 0;
+  const r = q / p;
+  const num = 1 - Math.pow(r, a);
+  const den = 1 - Math.pow(r, s);
+  return Math.abs(den) < 1e-15 ? a / s : num / den;
+}
+
+// Exact probability Alice ever reaches bankroll level x (0<=x<=s) before Alice's
+// own bankroll hits s (Bob's zero). x is Alice's bankroll in units.
+function aliceReachProb(a, s, x, p, q){
+  if (x <= 0) return 1 - aliceWinProb(a, s, p, q); // Alice reaches $0 = Bob wins
+  if (x >= s) return aliceWinProb(a, s, p, q);     // Alice reaches total = Bob at $0
+  if (Math.abs(p - q) < 1e-12){
+    return x > a ? a / x : (s - a) / (s - x);
+  }
+  const r = q / p;
+  if (x > a){
+    // Hit upper target x before lower barrier 0.
+    const den = 1 - Math.pow(r, x);
+    return Math.abs(den) < 1e-15 ? a / x : (1 - Math.pow(r, a)) / den;
+  }
+  // Hit lower target x before upper barrier s.
+  const den = 1 - Math.pow(r, s - x);
+  if (Math.abs(den) < 1e-15) return (s - a) / (s - x);
+  return (Math.pow(r, a - x) - Math.pow(r, s - x)) / den;
+}
+
+// Probability Bob reaches y units (his own bankroll) before Alice reaches $0.
+function bobReachProb(a, s, y, p, q){
+  if (y <= 0) return aliceWinProb(a, s, p, q);     // Bob at $0 = Alice wins
+  if (y >= s) return 1 - aliceWinProb(a, s, p, q); // Bob takes all = Alice at $0
+  return aliceReachProb(a, s, s - y, p, q);
+}
+
+function expectedFlips(a, s, p, q){
+  if (Math.abs(p - q) < 1e-12) return a * (s - a);
+  const d = q - p;
+  if (Math.abs(d) < 1e-12) return a * (s - a);
+  const r = q / p;
+  const den = 1 - Math.pow(r, s);
+  if (Math.abs(den) < 1e-15) return a * (s - a);
+  return a / d - (s / d) * (1 - Math.pow(r, a)) / den;
+}
+
+function updateRuinDerived(){
+  const stake = +$('ruinStake').value || 1;
+  const aD = +$('ruinA').value || 0;
+  const bD = +$('ruinB').value || 0;
+  const uA = roundToStakeUnits(aD, stake);
+  const uB = roundToStakeUnits(bD, stake);
+  $('ruinUnitsHelp').textContent =
+    `Total $${(uA + uB) * stake} = ${(uA + uB)} units of $${stake} (Alice ${uA}, Bob ${uB})`;
+  $('ruinPOut').textContent = (+$('ruinP').value).toFixed(2);
+  $('ruinRunBtn').textContent = `Run ${(+$('ruinNSims').value).toLocaleString()} coin-flip games ▶`;
+}
+['ruinA','ruinB','ruinStake','ruinP','ruinTargetA','ruinTargetB','ruinNSims'].forEach(id=>{
+  const el = $(id);
+  if(el) el.addEventListener('input', updateRuinDerived);
+});
+updateRuinDerived();
+
+function drawRuinDuration(durations){
+  const canvas = $('ruinDurCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const pad = {l:58, r:18, t:22, b:38};
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#0c1322';
+  ctx.fillRect(0,0,W,H);
+
+  const med = quantile(durations, 0.5);
+  const p95 = quantile(durations, 0.95);
+  const maxV = Math.max(20, p95 * 1.15);
+  const bins = 42;
+  const binW = maxV / bins;
+  const counts = new Array(bins).fill(0);
+  durations.forEach(v=>{
+    let b = Math.floor(v / binW);
+    if(b < 0) b = 0;
+    if(b >= bins) b = bins - 1;
+    counts[b]++;
+  });
+  const maxCount = Math.max(...counts, 1);
+  const plotW = W - pad.l - pad.r, plotH = H - pad.t - pad.b;
+
+  ctx.strokeStyle = '#1c2b43';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for(let i=0;i<=5;i++){
+    const y = pad.t + plotH * i / 5;
+    ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#6f829f';
+  ctx.font = '11px ui-sans-serif, system-ui';
+  ctx.textAlign = 'right';
+  for(let i=0;i<=5;i++){
+    ctx.fillText(Math.round(maxCount * (1 - i/5)).toString(), pad.l - 6, pad.t + plotH*i/5 + 4);
+  }
+
+  const bw = plotW / bins;
+  counts.forEach((c, i)=>{
+    const x = pad.l + i * bw;
+    const h = (c / maxCount) * plotH;
+    ctx.fillStyle = (i + 0.5) * binW <= med ? '#3b82f6' : '#2a568f';
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(x + 0.5, pad.t + plotH - h, bw - 1.5, h);
+    ctx.globalAlpha = 1;
+  });
+
+  ctx.font = '11px ui-sans-serif';
+  ctx.textAlign = 'center';
+  for(let i=0;i<=6;i++){
+    const v = maxV * i / 6;
+    const x = pad.l + plotW * i / 6;
+    ctx.fillText(Math.round(v).toLocaleString(), x, H - 12);
+  }
+
+  function marker(x, color, label){
+    ctx.strokeStyle = color;
+    ctx.setLineDash([4,4]);
+    ctx.beginPath();
+    ctx.moveTo(x, pad.t);
+    ctx.lineTo(x, pad.t + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.fillText(label, x, pad.t + 12);
+  }
+  marker(pad.l + plotW * med / maxV, '#f59e0b', 'median');
+  marker(pad.l + plotW * mean(durations) / maxV, '#29d19a', 'mean');
+
+  ctx.fillStyle = '#93a4bd';
+  ctx.textAlign = 'center';
+  ctx.font = '12px ui-sans-serif';
+  ctx.fillText('Flips until a player runs out of money', W/2, H - 1);
+}
+
+function drawRuinReach(uA, uB, mcReachA, mcReachB){
+  const canvas = $('ruinReachCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const pad = {l:54, r:18, t:20, b:38};
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#0c1322';
+  ctx.fillRect(0,0,W,H);
+
+  const s = uA + uB;
+  const {p, q} = ruinFitP();
+  const plotW = W - pad.l - pad.r, plotH = H - pad.t - pad.b;
+  const xMap = v => pad.l + plotW * v / s;
+  const yMap = v => pad.t + plotH * (1 - v);
+
+  ctx.strokeStyle = '#1c2b43';
+  ctx.beginPath();
+  for(let i=0;i<=5;i++){
+    ctx.moveTo(pad.l, pad.t + plotH * i / 5);
+    ctx.lineTo(W - pad.r, pad.t + plotH * i / 5);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#6f829f';
+  ctx.font = '11px ui-sans-serif';
+  ctx.textAlign = 'right';
+  for(let i=0;i<=5;i++) ctx.fillText((i*20)+'%', pad.l - 6, pad.t + plotH*(1 - i/5) + 4);
+
+  const levels = [];
+  for(let x=0; x<=s; x++) levels.push(x);
+
+  const theoryA = levels.map(x=>aliceReachProb(uA, s, x, p, q));
+  const theoryB = levels.map(x=>bobReachProb(uA, s, s - x, p, q));
+
+  function lineA(arr, color, dash){
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.1;
+    ctx.setLineDash(dash || []);
+    ctx.beginPath();
+    arr.forEach((v, i)=>{
+      const x = xMap(levels[i]), y = yMap(v);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  lineA(theoryA, '#29d19a');
+  lineA(mcReachA, '#7ee2b8', [5,4]);
+  lineA(theoryB, '#f59e0b');
+  lineA(mcReachB, '#ffd089', [5,4]);
+
+  ctx.strokeStyle = '#3f536f';
+  ctx.setLineDash([3,3]);
+  ctx.beginPath();
+  ctx.moveTo(xMap(uA), pad.t);
+  ctx.lineTo(xMap(uA), pad.t + plotH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#93a4bd';
+  ctx.textAlign = 'center';
+  ctx.fillText('Alice start', xMap(uA), pad.t + 12);
+
+  ctx.font = '11px ui-sans-serif';
+  for(let i=0;i<=6;i++){
+    const v = s * i / 6;
+    ctx.fillText(Math.round(v).toLocaleString()+'$', xMap(v), H - 12);
+    ctx.beginPath();
+    ctx.moveTo(xMap(v), pad.t + plotH);
+    ctx.lineTo(xMap(v), pad.t + plotH + 4);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#93a4bd';
+  ctx.font = '12px ui-sans-serif';
+  ctx.fillText('Alice bankroll at that level →', W/2, H - 1);
+}
+
+function runGamblersRuin(){
+  const btn = $('ruinRunBtn');
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+
+  const stake = +$('ruinStake').value || 1;
+  const uA = roundToStakeUnits($('ruinA').value, stake);
+  const uB = roundToStakeUnits($('ruinB').value, stake);
+  const s = uA + uB;
+  if(s <= 0){
+    alert('Please set both bankrolls to at least one stake.');
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+    return;
+  }
+  const nSims = +$('ruinNSims').value || 5000;
+
+  const targetAD = +$('ruinTargetA').value || (uA + uB) * stake;
+  const targetBD = +$('ruinTargetB').value || (uA + uB) * stake;
+  const tA = Math.max(0, Math.min(s, roundToStakeUnits(targetAD, stake)));
+  const tB = Math.max(0, Math.min(s, roundToStakeUnits(targetBD, stake)));
+
+  const {p, q} = ruinFitP();
+
+  const durations = new Array(nSims).fill(0);
+  const maxA = new Array(nSims).fill(uA);
+  const minA = new Array(nSims).fill(uA);
+
+  setTimeout(()=>{
+    try {
+      let winsAlice = 0, hitACount = 0, hitBCount = 0;
+      for(let i=0;i<nSims;i++){
+        let a = uA;
+        let flips = 0;
+        let mx = uA, mn = uA;
+        let rA = false, rB = false;
+        while(a > 0 && a < s){
+          a += (Math.random() < p) ? 1 : -1;
+          flips++;
+          if(a > mx) mx = a;
+          if(a < mn) mn = a;
+          if(!rA){
+            if(tA === 0) { if(a === 0) rA = true; }
+            else if(a >= tA) rA = true;
+          }
+          if(!rB){
+            if(tB === 0) { if(a === s) rB = true; }
+            else if(a <= s - tB) rB = true;
+          }
+        }
+        winsAlice += (a >= s) ? 1 : 0;
+        hitACount += rA ? 1 : 0;
+        hitBCount += rB ? 1 : 0;
+        durations[i] = flips;
+        maxA[i] = mx;
+        minA[i] = mn;
+      }
+
+      const mcAliceWin = winsAlice / nSims;
+      const theoryAliceWin = aliceWinProb(uA, s, p, q);
+      const theoryBobWin = 1 - theoryAliceWin;
+      const mcBobWin = 1 - mcAliceWin;
+
+      // Reach probability curve (0..s, Alice bankroll) using sorted extrema, so
+      // the chart stays fast even for large bankrolls.
+      const maxSorted = maxA.slice().sort((a,b)=>a-b);
+      const minSorted = minA.slice().sort((a,b)=>a-b);
+      const countLE = (arr, v) => { let lo=0, hi=arr.length; while(lo<hi){ const m=(lo+hi)>>1; if(arr[m]<=v) lo=m+1; else hi=m; } return lo; };
+      const countGE = (arr, v) => maxSorted.length - countLE(arr, v-1);
+      const mcReachA = [], mcReachB = [];
+      for(let x=0;x<=s;x++){
+        let ca;
+        if(x === 0) ca = countLE(minSorted, 0);
+        else if(x === s) ca = countGE(maxSorted, s);
+        else if(x > uA) ca = countGE(maxSorted, x);
+        else if(x < uA) ca = countLE(minSorted, x);
+        else ca = nSims;
+        mcReachA.push(ca / nSims);
+
+        // Bob's own bankroll = s - x.
+        const y = s - x;
+        let cb;
+        if(y === 0) cb = countGE(maxSorted, s);            // Bob at $0 = Alice wins
+        else if(y === s) cb = countLE(minSorted, 0);       // Bob takes all = Alice at $0
+        else if(y > uB) cb = countLE(minSorted, s - y);
+        else if(y < uB) cb = countGE(maxSorted, s - y);
+        else cb = nSims;
+        mcReachB.push(cb / nSims);
+      }
+
+      const stat = (arr, label, color) => `<div class="stat-card"><div class="label">${label}</div><div class="value">${arr}</div></div>`;
+
+      $('ruinWinGrid').innerHTML =
+        stat(`<span class="green">${(mcAliceWin*100).toFixed(1)}%</span>`, 'Alice wins (Bob $0)') +
+        stat(`<span class="red">${(mcBobWin*100).toFixed(1)}%</span>`, 'Bob wins (Alice $0)') +
+        stat(`<span class="blue">${mean(durations).toFixed(0)}</span>`, 'MC flips to ruin');
+
+      $('ruinKpiRow').innerHTML =
+        `<div class="kpi">Theory: <strong class="green">${(theoryAliceWin*100).toFixed(1)}%</strong> Alice / <strong class="red">${(theoryBobWin*100).toFixed(1)}%</strong> Bob</div>` +
+        `<div class="kpi">Theory E[flips]: <strong>${expectedFlips(uA, s, p, q).toFixed(0)}</strong></div>` +
+        `<div class="kpi">Median flips: <strong>${quantile(durations,0.5).toFixed(0)}</strong></div>` +
+        `<div class="kpi">95th pct flips: <strong>${quantile(durations,0.95).toFixed(0)}</strong></div>`;
+
+      const rows = [
+        {label:'Alice reaches $'+ (tA*stake) + ' before Bob $0', mc: hitACount/nSims, th: aliceReachProb(uA, s, tA, p, q)},
+        {label:'Bob reaches $'+ (tB*stake) + ' before Alice $0', mc: hitBCount/nSims, th: bobReachProb(uA, s, tB, p, q)}
+      ];
+      $('ruinTargetTable').querySelector('tbody').innerHTML = rows.map(r=>{
+        const d = (r.mc - r.th)*100;
+        return `<tr><td>${r.label}</td><td>${(r.mc*100).toFixed(1)}%</td><td>${(r.th*100).toFixed(1)}%</td><td>${(d>=0?'+':'')+d.toFixed(1)} pts</td></tr>`;
+      }).join('');
+
+      drawRuinDuration(durations);
+      drawRuinReach(uA, uB, mcReachA, mcReachB);
+
+      const fairPct = Math.abs(p - q) < 1e-12 ? '50% / 50%' : `${(p*100).toFixed(1)}% / ${(q*100).toFixed(1)}%`;
+      const total$ = s * stake;
+      const a$ = uA * stake, b$ = uB * stake;
+      $('ruinInterpretation').innerHTML = `
+        <h2>Interpretation — ${uA}-unit vs ${uB}-unit coin duel</h2>
+        <p>Alice starts with <strong>$${a$.toLocaleString()}</strong> (${uA} units), Bob with <strong>$${b$.toLocaleString()}</strong> (${uB} units). Total pot <strong>$${total$.toLocaleString()}</strong> (${s} units). Coin: Alice wins a flip <strong>${fairPct}</strong>.</p>
+        <div class="callout">
+          <strong>Who goes broke?</strong> Alice ruins Bob with probability ${(theoryAliceWin*100).toFixed(1)}% (MC ${(mcAliceWin*100).toFixed(1)}%). Bob ruins Alice with probability ${(theoryBobWin*100).toFixed(1)}% (MC ${(mcBobWin*100).toFixed(1)}%). ${Math.abs(p-q)<1e-12 ? 'With a fair coin, these odds are exactly <code>Alice / (Alice+Bob)</code> — the richer player is the favorite, but the poorer player still has a real shot.' : 'With a biased coin the formulas below change the odds dramatically.'}
+          <br><br>
+          <strong>Expected length:</strong> about ${expectedFlips(uA, s, p, q).toFixed(0)} flips (MC mean ${mean(durations).toFixed(0)}, median ${quantile(durations,0.5).toFixed(0)}). The game almost always runs far longer than intuition suggests.
+        </div>
+        <p><strong>The exact mathematics.</strong> Let Alice hold <code>a</code> units, Bob <code>b</code> units, total <code>s = a + b</code>, and let <code>p</code> be Alice&rsquo;s chance to win one flip, <code>q = 1 - p</code>. Alice&rsquo;s bankroll is a fair one-step random walk <code>i → i+1</code> (Alice wins) or <code>i → i-1</code> (Alice loses), absorbed at <code>0</code> and <code>s</code>.</p>
+        <p>Ruination happens when the random walk hits <code>0</code> (Bob wins) or <code>s</code> (Alice wins).</p>
+        <p><strong>Fair coin (p = q = 1/2):</strong></p>
+        <p>P(Alice ruins Bob) = a / (a+b), P(Bob ruins Alice) = b / (a+b), E[flips] = a·b.</p>
+        <p>So a $70 vs $30 duel with $1 stakes (70 vs 30 units) ends with Alice winning <strong>70%</strong> of the time on average, Bob winning <strong>30%</strong>, and it lasts about <strong>2,100</strong> flips. With $10 stakes (7 vs 3 units) the odds are the same but it lasts about <strong>21</strong> flips — the distribution is wide, as the histogram above shows.</p>
+        <p><strong>Biased coin (p ≠ q):</strong></p>
+        <p>P(Alice ruins Bob) = (1 − (q/p)<sup>a</sup>) / (1 − (q/p)<sup>a+b</sup>).</p>
+        <p>P(Alice ever reaches level x before Bob&rsquo;s $0) = (1 − (q/p)<sup>a</sup>) / (1 − (q/p)<sup>x</sup>) if x &gt; a, or the mirror formula if x &lt; a. The reach chart above shows this for every level.</p>
+        <p><strong>Reading the reach chart:</strong> For a level above Alice&rsquo;s start, the curve is the probability she ever gets there before Bob runs out. For a level below her start, it is the probability she ever drops there before Alice herself hits $0. The dashed Monte Carlo lines line up with the solid exact curves — that is the point: thousands of simulated games recreate the formula.</p>
+        <p class="small" style="margin-top:10px">Model: one unit changes by exactly 1 per flip; bankrolls and targets are rounded to whole stakes. Independence per flip; no limit on game length. Not advice — just the mathematics of why bankroll size is the whole game.</p>
+      `;
+    } catch(err){
+      console.error(err);
+      alert('Gambler&rsquo;s-ruin simulation failed: ' + (err && err.message ? err.message : err));
+    } finally {
+      btn.textContent = prevLabel;
+      btn.disabled = false;
+    }
+  }, 30);
+}
+window.runGamblersRuin = runGamblersRuin;
+$('ruinRunBtn').addEventListener('click', runGamblersRuin);
+
+function copySessionToRuin(){
+  const start = +$('bankroll').value || 1000;
+  const bet = +$('minBet').value || 25;
+  const units = Math.max(1, Math.round(start / bet));
+  $('ruinA').value = units;
+  $('ruinB').value = Math.max(1, Math.round(units * 0.5));
+  $('ruinStake').value = bet;
+  $('ruinTargetA').value = units + Math.floor(units * 0.5);
+  $('ruinTargetB').value = units + Math.floor(units * 0.5);
+  updateRuinDerived();
+}
+window.copySessionToRuin = copySessionToRuin;
+$('ruinCopyBtn').addEventListener('click', copySessionToRuin);
+
+// Auto-run the gambler's-ruin simulation the first time the tab is opened,
+// so the math is visible immediately rather than behind a blank placeholder.
+let ruinAutoRan = false;
+document.querySelectorAll('.tab-btn[data-tab="ruin"]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    if(!ruinAutoRan){
+      ruinAutoRan = true;
+      setTimeout(runGamblersRuin, 120);
+    }
+  });
+});
